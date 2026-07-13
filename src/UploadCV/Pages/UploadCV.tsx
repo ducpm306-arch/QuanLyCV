@@ -5,11 +5,13 @@ import { VerifyCV } from "../Components/VerifyCV";
 export const UploadCV = () => {
   return (
     <>
-      <div className="col-5">
-        <UploadFile></UploadFile>
-      </div>
-      <div className="col-5">
-        <VerifyCV></VerifyCV>
+      <div className="row">
+        <div className="col-5">
+          <UploadFile></UploadFile>
+        </div>
+        <div className="col-5">
+          <VerifyCV></VerifyCV>
+        </div>
       </div>
     </>
   );
