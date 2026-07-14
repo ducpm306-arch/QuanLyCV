@@ -3,37 +3,55 @@ import React from "react";
 export const VerifyCV = () => {
   return (
     <>
-      <div className="card text-center">
+      <div className="card">
+        <div className="card-head text-end">
+          <button>Xoá trắng form</button>
+        </div>
         <div className="card-body">
-          <div className="mb-3 row">
-            <label
-              htmlFor="staticEmail"
-              className="col-sm-2 col-htmlForm-label"
-            >
-              Email
-            </label>
-            <div className="col-sm-10">
-              <input
-                type="text"
-                className="htmlForm-control-plaintext"
-                id="staticEmail"
-              ></input>
+          <div className="row">
+            <div className="col-6">
+              <label className="form-label">Họ và tên</label>
+              <input type="text" className="form-control"></input>
+            </div>
+            <div className="col-6">
+              <label className="form-label">Vị trí trúng tuyển</label>
+              <input type="text" className="form-control"></input>
             </div>
           </div>
-          <div className="mb-3 row">
-            <label
-              htmlFor="inputPassword"
-              className="col-sm-2 col-htmlForm-label"
-            >
-              Password
-            </label>
-            <div className="col-sm-10">
-              <input
-                type="text"
-                className="htmlForm-control"
-                id="inputPassword"
-              ></input>
+
+          <div className="row">
+            <div className="col-6">
+              <label className="form-label">Số năm kinh nghiệm</label>
+
+              <input type="text" className="form-control"></input>
             </div>
+            <div className="col-6">
+              <label className="form-label">Địa chỉ enail</label>
+              <input type="text" className="form-control"></input>
+            </div>
+          </div>
+
+          <div className="row">
+            <div className="col-6">
+              <label className="form-label">Số điện thoại</label>
+              <input type="text" className="form-control"></input>
+            </div>
+            <div className="col-6">
+              <label className="form-label">Tech Stack</label>
+              <input type="text" className="form-control"></input>
+            </div>
+          </div>
+
+          <div className="row">
+            <div className="col-12">
+              <label className="form-label">Nhận xét tóm tắt CV</label>
+              <input type="text" className="form-control"></input>
+            </div>
+          </div>
+
+          <div className="text-end">
+            <button>Huỷ bỏ</button>
+            <button>Lưu CV ứng viên</button>
           </div>
         </div>
       </div>
