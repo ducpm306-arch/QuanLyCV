@@ -1,4 +1,3 @@
-import React from "react";
 import { UploadFile } from "../Components/UploadFile";
 import { VerifyCV } from "../Components/VerifyCV";
 

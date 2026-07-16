@@ -1,5 +1,3 @@
-import React from "react";
-
 export const VerifyCV = () => {
   return (
     <>
@@ -11,11 +9,17 @@ export const VerifyCV = () => {
           <div className="row">
             <div className="col-6">
               <label className="form-label">Họ và tên</label>
-              <input type="text" className="form-control"></input>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="VD: Nguyễn Văn A"
+              ></input>
             </div>
             <div className="col-6">
-              <label className="form-label">Vị trí trúng tuyển</label>
-              <input type="text" className="form-control"></input>
+              <label className="form-label">Vị trí ứng tuyển</label>
+              <select className="form-select">
+                <option></option>
+              </select>
             </div>
           </div>
 
@@ -23,29 +27,48 @@ export const VerifyCV = () => {
             <div className="col-6">
               <label className="form-label">Số năm kinh nghiệm</label>
 
-              <input type="text" className="form-control"></input>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="0"
+              ></input>
             </div>
             <div className="col-6">
               <label className="form-label">Địa chỉ enail</label>
-              <input type="text" className="form-control"></input>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="name@example.com"
+              ></input>
             </div>
           </div>
 
           <div className="row">
             <div className="col-6">
               <label className="form-label">Số điện thoại</label>
-              <input type="text" className="form-control"></input>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="09xx xxx xxx"
+              ></input>
             </div>
             <div className="col-6">
               <label className="form-label">Tech Stack</label>
-              <input type="text" className="form-control"></input>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Nhập để chọn Tech Stack"
+              ></input>
             </div>
           </div>
 
           <div className="row">
             <div className="col-12">
               <label className="form-label">Nhận xét tóm tắt CV</label>
-              <input type="text" className="form-control"></input>
+              <textarea
+                className="form-control"
+                placeholder="Ghi chú nhanh, thế mạnh đặc sắc của CV hoặc đánh giá sơ bộ"
+              ></textarea>
             </div>
           </div>
 

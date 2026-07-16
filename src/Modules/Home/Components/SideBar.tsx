@@ -1,5 +1,6 @@
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import { NavLink } from "react-router-dom";
 
 function SideBar() {
   return (
@@ -9,12 +10,12 @@ function SideBar() {
         className="h-100 flex-column align-items-stretch pe-4 border-end"
       >
         <nav className="nav nav-pills flex-column">
-          <a className="nav-link" href="#UploadCV">
+          <NavLink className="nav-link" to={"/upload-cv"}>
             Upload CV
-          </a>
-          <a className="nav-link" href="#ManageCV">
+          </NavLink>
+          <NavLink className="nav-link" to={"/manage-cv"}>
             Manage CV
-          </a>
+          </NavLink>
         </nav>
       </nav>
     </>
