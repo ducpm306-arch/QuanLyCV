@@ -1,13 +1,8 @@
-import {
-  InternalServerErrorException,
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import JSZip from 'jszip';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Cv } from './entities/cv.entity.js';
@@ -24,6 +19,8 @@ const wordNamespace =
 
 @Injectable()
 export class CvGeneratorService {
+  private readonly logger = new Logger(CvGeneratorService.name);
+
   async generate(cv: Cv, cvId: string) {
     if (!cv.extractedData) {
       throw new NotFoundException('CV chưa có dữ liệu trích xuất để tạo file');
@@ -36,7 +33,6 @@ export class CvGeneratorService {
     await mkdir(destination, { recursive: true });
 
     const docxPath = join(destination, 'cv.docx');
-    const pdfPath = join(destination, 'cv.pdf');
     const extracted = cv.extractedData;
     const review = cv.review;
 
@@ -44,7 +40,7 @@ export class CvGeneratorService {
       'Tên:': this.value(extracted.name),
       'Vị trí ứng tuyển:': this.value(extracted.position),
       'Tech Stacks:': this.value(extracted.tech_stacks),
-      'Kinh nghiệm:': this.value(extracted.experience_years, ' năm'),
+      'Kinh nghiệm:': this.value(extracted.experience_years ?? 0, ' năm'),
       'Email:': this.value(extracted.email),
       'SĐT:': this.value(extracted.phone_number),
       'Nhận xét:': this.value(review.summary),
@@ -78,19 +74,18 @@ export class CvGeneratorService {
         const cells = rows
           .item(rowIndex)
           ?.getElementsByTagNameNS(wordNamespace, 'tc');
-        if (!cells || cells.length < 2) continue;
+        if (!cells?.length) continue;
 
-        const label = this.cellText(cells.item(1));
+        const targetCell = cells.item(cells.length > 1 ? 1 : 0);
+        const label = this.cellText(targetCell);
         const matchingLabel = Object.keys(values).find((key) =>
           label.trim().startsWith(key),
         );
         if (!matchingLabel) continue;
 
         this.setCellText(
-          cells.item(1),
-          matchingLabel === 'Nhận xét:'
-            ? values[matchingLabel]
-            : `${matchingLabel} ${values[matchingLabel]}`,
+          targetCell,
+          `${matchingLabel} ${values[matchingLabel]}`,
         );
       }
     }
@@ -101,6 +96,7 @@ export class CvGeneratorService {
     );
     await writeFile(docxPath, await zip.generateAsync({ type: 'nodebuffer' }));
 
+    let pdfAvailable = false;
     try {
       const converter = process.env.DOCX_TO_PDF_BIN || 'soffice';
       await execFileAsync(converter, [
@@ -111,22 +107,18 @@ export class CvGeneratorService {
         destination,
         docxPath,
       ]);
-    } catch {
-      throw new ServiceUnavailableException(
-        `Đã tạo DOCX tại ${basename(docxPath)} nhưng chưa chuyển được PDF. Cài LibreOffice hoặc cấu hình DOCX_TO_PDF_BIN.`,
-      );
-    }
-
-    try {
-      await stat(pdfPath);
-    } catch {
-      throw new InternalServerErrorException(
-        'LibreOffice chạy xong nhưng không tạo được file PDF',
+      await stat(join(destination, 'cv.pdf'));
+      pdfAvailable = true;
+    } catch (error) {
+      this.logger.warn(
+        `DOCX was created, but PDF conversion failed: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     }
     return {
       docx: join('uploads', 'cvs', 'generated', cvId, 'cv.docx'),
-      pdf: join('uploads', 'cvs', 'generated', cvId, 'cv.pdf'),
+      pdf: pdfAvailable
+        ? join('uploads', 'cvs', 'generated', cvId, 'cv.pdf')
+        : null,
     };
   }
 

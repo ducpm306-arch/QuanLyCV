@@ -36,7 +36,7 @@ export class Cv {
   review: Record<string, unknown> | null;
 
   @Prop({ type: mongoose.Schema.Types.Mixed, default: null })
-  generatedFiles: { docx: string; pdf: string } | null;
+  generatedFiles: { docx: string; pdf: string | null } | null;
 
   @Prop({
     enum: [

@@ -14,6 +14,14 @@ import {
   Position,
   PositionSchema,
 } from '../positions/entities/position.entity.js';
+import {
+  TechStack,
+  TechStackSchema,
+} from '../tech-stacks/entities/tech-stack.entity.js';
+import {
+  ApplicantTechStack,
+  ApplicantTechStackSchema,
+} from '../applicant-tech-stacks/entities/applicant-tech-stack.entity.js';
 
 @Module({
   imports: [
@@ -21,6 +29,8 @@ import {
       { name: Cv.name, schema: CvSchema },
       { name: Applicant.name, schema: ApplicantSchema },
       { name: Position.name, schema: PositionSchema },
+      { name: TechStack.name, schema: TechStackSchema },
+      { name: ApplicantTechStack.name, schema: ApplicantTechStackSchema },
     ]),
     AiModule,
   ],

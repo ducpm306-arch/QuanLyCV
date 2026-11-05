@@ -23,10 +23,11 @@ export class ApplicantTechStacksService {
   ) {}
 
   async create(input: CreateApplicantTechStackDto) {
-    await Promise.all([
+    const [applicant, techStack] = await Promise.all([
       this.assertApplicant(input.applicant),
       this.assertTechStack(input.tech_stack),
     ]);
+    this.assertPositionMatch(applicant.position, techStack.position);
     return this.applicantTechStackModel.create({
       applicant: new Types.ObjectId(input.applicant),
       tech_stack: new Types.ObjectId(input.tech_stack),
@@ -56,14 +57,23 @@ export class ApplicantTechStacksService {
 
   async update(id: string, input: UpdateApplicantTechStackDto) {
     const link = await this.findDocument(id);
+    let applicantId = link.applicant.toString();
+    let techStackId = link.tech_stack.toString();
     if (input.applicant) {
-      await this.assertApplicant(input.applicant);
+      const applicant = await this.assertApplicant(input.applicant);
+      applicantId = applicant._id.toString();
       link.applicant = new Types.ObjectId(input.applicant);
     }
     if (input.tech_stack) {
-      await this.assertTechStack(input.tech_stack);
+      const techStack = await this.assertTechStack(input.tech_stack);
+      techStackId = techStack._id.toString();
       link.tech_stack = new Types.ObjectId(input.tech_stack);
     }
+    const [applicant, techStack] = await Promise.all([
+      this.assertApplicant(applicantId),
+      this.assertTechStack(techStackId),
+    ]);
+    this.assertPositionMatch(applicant.position, techStack.position);
     return link.save();
   }
 
@@ -85,21 +95,34 @@ export class ApplicantTechStacksService {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Applicant id không hợp lệ');
     }
-    const applicant = await this.applicantModel.exists({
+    const applicant = await this.applicantModel.findOne({
       _id: id,
       deletedAt: null,
     });
     if (!applicant) throw new NotFoundException('Không tìm thấy ứng viên');
+    return applicant;
   }
 
   private async assertTechStack(id: string) {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Tech stack id không hợp lệ');
     }
-    const techStack = await this.techStackModel.exists({
+    const techStack = await this.techStackModel.findOne({
       _id: id,
       deletedAt: null,
     });
     if (!techStack) throw new NotFoundException('Không tìm thấy kỹ năng');
+    return techStack;
+  }
+
+  private assertPositionMatch(
+    applicantPosition: Types.ObjectId,
+    techStackPosition: Types.ObjectId,
+  ) {
+    if (applicantPosition.toString() !== techStackPosition.toString()) {
+      throw new BadRequestException(
+        'Chỉ có thể gắn Tech Stack thuộc vị trí của ứng viên',
+      );
+    }
   }
 }
