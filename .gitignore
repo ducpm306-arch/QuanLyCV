@@ -2,6 +2,12 @@
 /dist
 /node_modules
 /build
+/frontend/dist/
+.pnpm-store/
+.tmp-home/
+/frontend/dist/
+.pnpm-store/
+.tmp-home/
 
 # TypeScript build cache
 *.tsbuildinfo

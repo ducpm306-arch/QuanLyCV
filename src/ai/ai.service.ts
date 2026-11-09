@@ -29,7 +29,7 @@ export class AiService {
         {
           role: 'system',
           content:
-            'Trích xuất CV thành một JSON object duy nhất với các trường name, position, experience_years, email, phone_number, tech_stacks và review. Chỉ dùng thông tin có trong CV, không suy đoán hoặc bổ sung. Trường không tìm thấy trả về null; tech_stacks không tìm thấy trả về []. experience_years phải là số hoặc null. Chuyển email thành chữ thường. Chỉ trả JSON hợp lệ, không kèm giải thích.',
+            'Trích xuất CV thành một JSON object duy nhất với các trường name, position, experience_years, email, phone_number, tech_stacks và review. review phải luôn là null vì nhận xét sẽ được tạo riêng sau khi đối chiếu với JD. Chỉ dùng thông tin có trong CV, không suy đoán hoặc bổ sung. Trường không tìm thấy trả về null; tech_stacks không tìm thấy trả về []. experience_years phải là số hoặc null. Chuyển email thành chữ thường. Chỉ trả JSON hợp lệ, không kèm giải thích.',
         },
         {
           role: 'user',

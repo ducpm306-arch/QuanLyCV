@@ -43,7 +43,7 @@ export class CvGeneratorService {
       'Kinh nghiệm:': this.value(extracted.experience_years ?? 0, ' năm'),
       'Email:': this.value(extracted.email),
       'SĐT:': this.value(extracted.phone_number),
-      'Nhận xét:': this.value(review.summary),
+      'Nhận xét:': this.value(extracted.review || review.summary),
     };
 
     let source: Buffer;
@@ -155,12 +155,41 @@ export class CvGeneratorService {
     );
     if (textNodes.length === 0) return;
 
-    textNodes[0].textContent = text;
-    textNodes[0].setAttributeNS(
-      'http://www.w3.org/XML/1998/namespace',
-      'xml:space',
-      'preserve',
-    );
-    for (const node of textNodes.slice(1)) node.textContent = '';
+    const firstTextNode = textNodes[0];
+    firstTextNode.textContent = '';
+    for (const node of textNodes.slice(1)) {
+      node.parentNode?.removeChild(node);
+    }
+
+    let currentNode: Node = firstTextNode;
+    const lines = text.split('\n');
+    for (let index = 0; index < lines.length; index += 1) {
+      if (index > 0) {
+        const lineBreak = cell.ownerDocument.createElementNS(
+          wordNamespace,
+          'w:br',
+        );
+        currentNode.parentNode?.insertBefore(
+          lineBreak,
+          currentNode.nextSibling,
+        );
+        currentNode = lineBreak;
+      }
+
+      const textNode =
+        index === 0
+          ? firstTextNode
+          : cell.ownerDocument.createElementNS(wordNamespace, 'w:t');
+      textNode.textContent = lines[index];
+      textNode.setAttributeNS(
+        'http://www.w3.org/XML/1998/namespace',
+        'xml:space',
+        'preserve',
+      );
+      if (index > 0) {
+        currentNode.parentNode?.insertBefore(textNode, currentNode.nextSibling);
+      }
+      currentNode = textNode;
+    }
   }
 }

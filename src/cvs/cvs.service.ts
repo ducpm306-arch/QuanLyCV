@@ -13,7 +13,10 @@ import { Applicant } from '../applicants/entities/applicant.entity.js';
 import { CvGeneratorService } from './cv-generator.service.js';
 import { access } from 'node:fs/promises';
 import { Position } from '../positions/entities/position.entity.js';
-import { ExtractedCvSchema } from '../ai/schemas/extracted-cv.schema.js';
+import {
+  ExtractedCvSchema,
+  type CvReview,
+} from '../ai/schemas/extracted-cv.schema.js';
 import { TechStack } from '../tech-stacks/entities/tech-stack.entity.js';
 import { ApplicantTechStack } from '../applicant-tech-stacks/entities/applicant-tech-stack.entity.js';
 
@@ -38,14 +41,17 @@ export class CvsService {
   async create(file: Express.Multer.File) {
     return this.cvModel.create({
       file: file.filename,
-      originalName: file.originalname,
+      originalName: this.decodeUploadFileName(file.originalname),
       mimeType: file.mimetype,
       size: file.size,
     });
   }
 
   findAll() {
-    return this.cvModel.find({ deletedAt: null });
+    return this.cvModel
+      .find({ deletedAt: null })
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   async findOne(id: string) {
@@ -74,6 +80,25 @@ export class CvsService {
       const text = await this.textExtractor.extract(filePath, cv.mimeType);
 
       const extractedData = await this.aiService.extractCv(text);
+      const matchedPosition = await this.findClosestPosition(
+        extractedData.position,
+      );
+      const databaseTechStacks = await this.techStackModel
+        .find({
+          deletedAt: null,
+          ...(matchedPosition ? { position: matchedPosition._id } : {}),
+        })
+        .select('name')
+        .lean()
+        .exec();
+      const detectedTechStacks = new Set(
+        extractedData.tech_stacks.map((name) => this.normalizeTechStack(name)),
+      );
+      extractedData.tech_stacks = databaseTechStacks
+        .filter((techStack) =>
+          detectedTechStacks.has(this.normalizeTechStack(techStack.name)),
+        )
+        .map((techStack) => techStack.name);
 
       cv.extractedData = extractedData;
 
@@ -81,7 +106,11 @@ export class CvsService {
 
       await cv.save();
 
-      return extractedData;
+      return {
+        ...extractedData,
+        positionId: matchedPosition?._id.toString() ?? '',
+        matchedPositionName: matchedPosition?.name ?? '',
+      };
     } catch (error) {
       cv.status = 'failed';
 
@@ -109,7 +138,19 @@ export class CvsService {
       }
 
       allowedTechStacks = await this.positionTechStacks(position._id);
-      jdText = this.positionToText(position, allowedTechStacks);
+      const positionText = this.positionToText(position, allowedTechStacks);
+      if (!this.positionHasJobRequirements(position, allowedTechStacks)) {
+        if (!input.jobDescription?.trim()) {
+          throw new BadRequestException(
+            'Vị trí này chưa có JD hoặc yêu cầu kỹ năng. Hãy cấu hình Position hoặc nhập JD bổ sung.',
+          );
+        }
+        jdText = `${positionText}\nAdditional job description: ${input.jobDescription.trim()}`;
+      } else {
+        jdText = input.jobDescription?.trim()
+          ? `${positionText}\nAdditional job description: ${input.jobDescription.trim()}`
+          : positionText;
+      }
     }
 
     if (!jdText)
@@ -125,6 +166,12 @@ export class CvsService {
     );
 
     cv.review = review;
+    if (cv.extractedData) {
+      cv.extractedData = {
+        ...cv.extractedData,
+        review: this.formatReview(review),
+      };
+    }
     await cv.save();
 
     await this.applicantModel.updateOne(
@@ -192,7 +239,8 @@ export class CvsService {
         experience_years: extracted.experience_years,
         email: extracted.email,
         phone_number: extracted.phone_number,
-        review: cv.review ? JSON.stringify(cv.review) : '',
+        review:
+          extracted.review || (cv.review ? JSON.stringify(cv.review) : ''),
         cv: cv._id,
       },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
@@ -267,6 +315,43 @@ export class CvsService {
     ].join('\n');
   }
 
+  private formatReview(review: CvReview) {
+    const criteriaLabels: Record<string, string> = {
+      skills: 'Kỹ năng',
+      experience: 'Kinh nghiệm',
+      education: 'Trình độ',
+      jobRequirements: 'Yêu cầu công việc',
+    };
+    const reasons = review.criteria
+      .map((criterion) => {
+        const label = criteriaLabels[criterion.name] ?? criterion.name;
+        const evidence = criterion.evidence.length
+          ? ` Dẫn chứng: ${criterion.evidence.join('; ')}.`
+          : '';
+        return `${label}: ${criterion.explanation}${evidence}`;
+      })
+      .join('\n');
+
+    return [
+      `Điểm số: ${review.overallScore}/100`,
+      `Nhận xét: ${review.summary}`,
+      `Điểm mạnh: ${review.strengths.join('; ') || 'Chưa xác định'}`,
+      `Điểm yếu: ${review.weaknesses.join('; ') || 'Chưa xác định'}`,
+      `Lý do đánh giá:\n${reasons}`,
+    ].join('\n\n');
+  }
+
+  private positionHasJobRequirements(position: Position, techStacks: string[]) {
+    return Boolean(
+      position.description?.trim() ||
+      position.requiredSkills.length ||
+      position.preferredSkills.length ||
+      techStacks.length ||
+      position.minExperienceYears > 0 ||
+      position.educationRequirements?.trim(),
+    );
+  }
+
   private async syncApplicantTechStacks(
     applicantId: Types.ObjectId,
     techStackIds: Types.ObjectId[],
@@ -298,7 +383,80 @@ export class CvsService {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
+      .replace(/\s+/g, '');
+  }
+
+  private async findClosestPosition(positionName: string | null) {
+    if (!positionName?.trim()) return null;
+
+    const positions = await this.positionModel
+      .find({ deletedAt: null })
+      .select('_id name')
+      .lean()
+      .exec();
+    const queryTerms = this.positionTerms(positionName);
+    if (queryTerms.size === 0) return null;
+
+    let bestPosition: (typeof positions)[number] | null = null;
+    let bestScore = 0;
+    let ambiguous = false;
+    for (const position of positions) {
+      const candidateTerms = this.positionTerms(position.name);
+      const overlap = [...queryTerms].filter((term) =>
+        candidateTerms.has(term),
+      );
+      const score = overlap.length / queryTerms.size;
+      if (score > bestScore) {
+        bestPosition = position;
+        bestScore = score;
+        ambiguous = false;
+      } else if (score > 0 && score === bestScore) {
+        ambiguous = true;
+      }
+    }
+
+    return bestScore >= 0.5 && !ambiguous ? bestPosition : null;
+  }
+
+  private positionTerms(value: string) {
+    const ignoredTerms = new Set([
+      'thuc',
+      'tap',
+      'sinh',
+      'intern',
+      'internship',
+      'junior',
+      'senior',
+      'fresher',
+      'developer',
+      'engineer',
+      'ky',
+      'su',
+      'lap',
+      'trinh',
+      'vien',
+    ]);
+    const normalized = value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\bback[\s-]?end\b/g, 'backend')
+      .replace(/\bfront[\s-]?end\b/g, 'frontend')
+      .replace(/\bfull[\s-]?stack\b/g, 'fullstack')
+      .replace(/[^a-z0-9+#.]+/g, ' ');
+    return new Set(
+      normalized.split(/\s+/).filter((term) => term && !ignoredTerms.has(term)),
+    );
+  }
+
+  private decodeUploadFileName(value: string) {
+    if (!/[ÃÄÅÆÐ]|á[º»]/.test(value)) return value;
+
+    const bytes = Uint8Array.from(value, (character) =>
+      character.charCodeAt(0),
+    );
+    const decoded = new TextDecoder().decode(bytes);
+    return decoded.includes('\uFFFD') ? value : decoded;
   }
 
   private escapeRegex(value: string) {
