@@ -41,11 +41,18 @@ export class ApplicantsService {
     return applicant;
   }
 
-  private findDocument(id: string) {
-    return this.applicantModel
-      .findOne({ _id: this.objectId(id), deletedAt: null })
-      .orFail(new NotFoundException('Không tìm thấy ứng viên'))
-      .exec();
+  private async findDocument(id: string) {
+    const applicantId = this.objectId(id);
+    const applicant = await this.applicantModel.findOne({
+      _id: applicantId,
+      deletedAt: null,
+    });
+
+    if (!applicant) {
+      throw new NotFoundException('Không tìm thấy ứng viên');
+    }
+
+    return applicant;
   }
 
   async update(id: string, input: UpdateApplicantDto) {
@@ -83,7 +90,8 @@ export class ApplicantsService {
   }
 
   private async assertReferences(positionId: string, cvId: string) {
-    await Promise.all([this.assertPosition(positionId), this.assertCv(cvId)]);
+    await this.assertPosition(positionId);
+    await this.assertCv(cvId);
   }
 
   private async assertPosition(id: string) {

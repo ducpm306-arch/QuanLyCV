@@ -23,10 +23,8 @@ export class ApplicantTechStacksService {
   ) {}
 
   async create(input: CreateApplicantTechStackDto) {
-    const [applicant, techStack] = await Promise.all([
-      this.assertApplicant(input.applicant),
-      this.assertTechStack(input.tech_stack),
-    ]);
+    const applicant = await this.assertApplicant(input.applicant);
+    const techStack = await this.assertTechStack(input.tech_stack);
     this.assertPositionMatch(applicant.position, techStack.position);
     return this.applicantTechStackModel.create({
       applicant: new Types.ObjectId(input.applicant),
@@ -48,11 +46,18 @@ export class ApplicantTechStacksService {
     return link;
   }
 
-  private findDocument(id: string) {
-    return this.applicantTechStackModel
-      .findOne({ _id: this.objectId(id), deletedAt: null })
-      .orFail(new NotFoundException('Không tìm thấy kỹ năng của ứng viên'))
-      .exec();
+  private async findDocument(id: string) {
+    const linkId = this.objectId(id);
+    const link = await this.applicantTechStackModel.findOne({
+      _id: linkId,
+      deletedAt: null,
+    });
+
+    if (!link) {
+      throw new NotFoundException('Không tìm thấy kỹ năng của ứng viên');
+    }
+
+    return link;
   }
 
   async update(id: string, input: UpdateApplicantTechStackDto) {
@@ -69,10 +74,8 @@ export class ApplicantTechStacksService {
       techStackId = techStack._id.toString();
       link.tech_stack = new Types.ObjectId(input.tech_stack);
     }
-    const [applicant, techStack] = await Promise.all([
-      this.assertApplicant(applicantId),
-      this.assertTechStack(techStackId),
-    ]);
+    const applicant = await this.assertApplicant(applicantId);
+    const techStack = await this.assertTechStack(techStackId);
     this.assertPositionMatch(applicant.position, techStack.position);
     return link.save();
   }

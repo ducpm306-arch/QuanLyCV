@@ -50,9 +50,11 @@ export const CvReviewSchema = z
     missingInformation: z.array(z.string()),
   })
   .superRefine((review, context) => {
-    const average =
-      review.criteria.reduce((total, criterion) => total + criterion.score, 0) /
-      reviewCriterionNames.length;
+    let totalScore = 0;
+    for (const criterion of review.criteria) {
+      totalScore += criterion.score;
+    }
+    const average = totalScore / reviewCriterionNames.length;
 
     if (Math.abs(review.overallScore - average) > 1) {
       context.addIssue({

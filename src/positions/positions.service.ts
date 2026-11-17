@@ -44,7 +44,26 @@ export class PositionsService {
 
   async update(id: string, updatePositionDto: UpdatePositionDto) {
     const position = await this.findOne(id);
-    Object.assign(position, updatePositionDto);
+
+    if (updatePositionDto.name !== undefined) {
+      position.name = updatePositionDto.name;
+    }
+    if (updatePositionDto.description !== undefined) {
+      position.description = updatePositionDto.description;
+    }
+    if (updatePositionDto.requiredSkills !== undefined) {
+      position.requiredSkills = updatePositionDto.requiredSkills;
+    }
+    if (updatePositionDto.preferredSkills !== undefined) {
+      position.preferredSkills = updatePositionDto.preferredSkills;
+    }
+    if (updatePositionDto.minExperienceYears !== undefined) {
+      position.minExperienceYears = updatePositionDto.minExperienceYears;
+    }
+    if (updatePositionDto.educationRequirements !== undefined) {
+      position.educationRequirements = updatePositionDto.educationRequirements;
+    }
+
     return position.save();
   }
 

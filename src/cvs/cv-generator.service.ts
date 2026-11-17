@@ -64,6 +64,7 @@ export class CvGeneratorService {
     const document = new DOMParser().parseFromString(xml, 'application/xml');
     const tables = document.getElementsByTagNameNS(wordNamespace, 'tbl');
 
+    // DOCX stores table text in XML nodes, so the template is updated cell by cell.
     for (let tableIndex = 0; tableIndex < tables.length; tableIndex += 1) {
       const rows = tables
         .item(tableIndex)
@@ -78,9 +79,13 @@ export class CvGeneratorService {
 
         const targetCell = cells.item(cells.length > 1 ? 1 : 0);
         const label = this.cellText(targetCell);
-        const matchingLabel = Object.keys(values).find((key) =>
-          label.trim().startsWith(key),
-        );
+        let matchingLabel = '';
+        for (const key of Object.keys(values)) {
+          if (label.trim().startsWith(key)) {
+            matchingLabel = key;
+            break;
+          }
+        }
         if (!matchingLabel) continue;
 
         this.setCellText(
@@ -129,10 +134,14 @@ export class CvGeneratorService {
   private value(value: unknown, suffix = ''): string {
     if (value === null || value === undefined || value === '') return '';
     if (Array.isArray(value)) {
-      return value
-        .map((item) => this.value(item))
-        .filter(Boolean)
-        .join(', ');
+      const values: string[] = [];
+      for (const item of value) {
+        const text = this.value(item);
+        if (text) {
+          values.push(text);
+        }
+      }
+      return values.join(', ');
     }
     if (typeof value === 'string' || typeof value === 'number') {
       return `${value}${suffix}`;
@@ -143,9 +152,14 @@ export class CvGeneratorService {
 
   private cellText(cell: Element | null) {
     if (!cell) return '';
-    return Array.from(cell.getElementsByTagNameNS(wordNamespace, 't'))
-      .map((node) => node.textContent ?? '')
-      .join('');
+    const textNodes = Array.from(
+      cell.getElementsByTagNameNS(wordNamespace, 't'),
+    );
+    let text = '';
+    for (const node of textNodes) {
+      text += node.textContent || '';
+    }
+    return text;
   }
 
   private setCellText(cell: Element | null, text: string) {

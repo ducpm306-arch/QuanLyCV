@@ -22,6 +22,8 @@ import {
   ApplicantTechStack,
   ApplicantTechStackSchema,
 } from '../applicant-tech-stacks/entities/applicant-tech-stack.entity.js';
+import { CvPositionService } from './cv-position.service.js';
+import { CvTechStackService } from './cv-tech-stack.service.js';
 
 @Module({
   imports: [
@@ -35,6 +37,12 @@ import {
     AiModule,
   ],
   controllers: [CvsController],
-  providers: [CvsService, CvTextExtractorService, CvGeneratorService],
+  providers: [
+    CvsService,
+    CvTextExtractorService,
+    CvGeneratorService,
+    CvPositionService,
+    CvTechStackService,
+  ],
 })
 export class CvsModule {}

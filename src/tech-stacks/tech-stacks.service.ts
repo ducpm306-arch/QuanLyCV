@@ -42,11 +42,18 @@ export class TechStacksService {
     return techStack;
   }
 
-  private findDocument(id: string) {
-    return this.techStackModel
-      .findOne({ _id: this.objectId(id), deletedAt: null })
-      .orFail(new NotFoundException('Không tìm thấy kỹ năng'))
-      .exec();
+  private async findDocument(id: string) {
+    const techStackId = this.objectId(id);
+    const techStack = await this.techStackModel.findOne({
+      _id: techStackId,
+      deletedAt: null,
+    });
+
+    if (!techStack) {
+      throw new NotFoundException('Không tìm thấy kỹ năng');
+    }
+
+    return techStack;
   }
 
   async update(id: string, input: UpdateTechStackDto) {

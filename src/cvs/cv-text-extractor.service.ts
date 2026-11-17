@@ -115,11 +115,16 @@ export class CvTextExtractorService {
       throw new Error('Apache Tika returned invalid metadata');
     }
     const documents = Array.isArray(metadata) ? metadata : [metadata];
-    return documents
-      .map((document) => document['X-TIKA:content'])
-      .filter((content): content is string => typeof content === 'string')
-      .join('\n\n')
-      .trim();
+    const textParts: string[] = [];
+
+    for (const document of documents) {
+      const content = document['X-TIKA:content'];
+      if (typeof content === 'string') {
+        textParts.push(content);
+      }
+    }
+
+    return textParts.join('\n\n').trim();
   }
 
   private async extractPdf(buffer: Buffer) {
@@ -129,16 +134,20 @@ export class CvTextExtractorService {
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ('str' in item ? item.str : ''))
-        .join(' ')
-        .trim();
+      const textItems: string[] = [];
+      for (const item of content.items) {
+        if ('str' in item) {
+          textItems.push(item.str);
+        }
+      }
+      const pageText = textItems.join(' ').trim();
 
       if (pageText.length >= 80) {
         pages.push(pageText);
         continue;
       }
 
+      // A page with very little embedded text is probably scanned, so use OCR.
       const viewport = page.getViewport({ scale: 2 });
       const canvas = createCanvas(
         Math.ceil(viewport.width),
@@ -153,7 +162,14 @@ export class CvTextExtractorService {
         const ocrText = await this.aiService.ocrImage(
           canvas.toBuffer('image/png'),
         );
-        pages.push([pageText, ocrText].filter(Boolean).join('\n'));
+        let finalPageText = pageText;
+        if (ocrText) {
+          if (finalPageText) {
+            finalPageText += '\n';
+          }
+          finalPageText += ocrText;
+        }
+        pages.push(finalPageText);
       } finally {
         canvas.width = 0;
         canvas.height = 0;
@@ -164,6 +180,7 @@ export class CvTextExtractorService {
   }
 
   private async extractDocx(filePath: string) {
+    // Mammoth's raw-text API intentionally ignores DOCX formatting.
     const result = await mammoth.extractRawText({ path: filePath });
     return result.value;
   }
