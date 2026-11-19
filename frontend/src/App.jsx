@@ -46,6 +46,7 @@ function App() {
   const [techStacks, setTechStacks] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [cv, setCv] = useState(null);
+  const [extractionReady, setExtractionReady] = useState(false);
   const [extracted, setExtracted] = useState(emptyExtracted);
   const [positionId, setPositionId] = useState('');
   const [review, setReview] = useState(null);
@@ -109,8 +110,10 @@ function App() {
   }
 
   function resetForm() {
+    if (busy) return;
     setSelectedFile(null);
     setCv(null);
+    setExtractionReady(false);
     setReview(null);
     setExtracted(emptyExtracted);
     setPositionId('');
@@ -120,7 +123,7 @@ function App() {
   }
 
   function chooseFile(file) {
-    if (!file) return;
+    if (!file || busy) return;
     const validExtension = /\.(pdf|docx?|PDF|DOCX?)$/.test(file.name);
     if (!validExtension) {
       setError('Chỉ nhận file PDF, DOC hoặc DOCX.');
@@ -134,13 +137,17 @@ function App() {
     setNotice('');
     setSelectedFile(file);
     setCv(null);
+    setExtractionReady(false);
     setReview(null);
     setExtracted(emptyExtracted);
     setPositionId('');
-    void uploadAndExtract(file);
+    void uploadAndExtract(file, null);
   }
 
-  async function uploadAndExtract(fileToUpload = selectedFile) {
+  async function uploadAndExtract(
+    fileToUpload = selectedFile,
+    existingCv = cv,
+  ) {
     if (!fileToUpload) {
       setError('Chọn CV để tiếp tục.');
       return;
@@ -149,15 +156,19 @@ function App() {
     setError('');
     setNotice('Đang tải CV lên và đọc nội dung...');
     try {
-      const form = new FormData();
-      form.append('file', fileToUpload);
-      const uploaded = await readJson(
-        await fetch('/cvs', { method: 'POST', body: form }),
-      );
+      let uploaded = existingCv;
+      if (!uploaded) {
+        const form = new FormData();
+        form.append('file', fileToUpload);
+        uploaded = await readJson(
+          await fetch('/cvs', { method: 'POST', body: form }),
+        );
+        setCv(uploaded);
+      }
       const data = await readJson(
         await fetch(`/cvs/${uploaded._id}/extract`, { method: 'POST' }),
       );
-      setCv(uploaded);
+      setExtractionReady(true);
       setExtracted({
         ...emptyExtracted,
         ...data,
@@ -270,8 +281,16 @@ function App() {
   }
 
   async function saveCandidate() {
-    if (!cv) {
+    if (!extractionReady) {
       await uploadAndExtract();
+      return;
+    }
+    if (!extracted.name?.trim()) {
+      setError('Vui lòng nhập họ và tên ứng viên.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(extracted.email?.trim() || '')) {
+      setError('Vui lòng nhập email hợp lệ.');
       return;
     }
     const reviewResult = review || (await reviewCv());
@@ -365,6 +384,7 @@ function App() {
               techStacks={techStacks}
               positionId={positionId}
               setPositionId={setPositionId}
+              extractionReady={extractionReady}
               review={review}
               cv={cv}
               busy={busy}
@@ -395,6 +415,7 @@ function UploadPage({
   techStacks,
   positionId,
   setPositionId,
+  extractionReady,
   review,
   cv,
   busy,
@@ -431,7 +452,7 @@ function UploadPage({
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
-              onChooseFile(event.dataTransfer.files?.[0]);
+              if (!busy) onChooseFile(event.dataTransfer.files?.[0]);
             }}
           >
             <div className="upload-icon" aria-hidden="true">
@@ -468,7 +489,7 @@ function UploadPage({
               <span aria-hidden="true">✓</span> BƯỚC 2: XÁC NHẬN & CẬP NHẬT
               THÔNG TIN
             </h2>
-            <button className="clear-form" onClick={onReset}>
+            <button className="clear-form" onClick={onReset} disabled={busy}>
               Xóa trắng Form
             </button>
           </div>
@@ -487,6 +508,7 @@ function UploadPage({
               <select
                 className="form-select form-select-sm"
                 value={positionId}
+                disabled={busy}
                 onChange={(event) => {
                   const nextPosition = positions.find(
                     (item) => item._id === event.target.value,
@@ -575,16 +597,21 @@ function UploadPage({
           <div className="candidate-actions">
             <button
               className="btn btn-outline-secondary btn-sm"
+              disabled={busy}
               onClick={onReset}
             >
               Hủy bỏ
             </button>
             <button
               className="btn btn-dark btn-sm"
-              disabled={!file || busy || (cv && !positionId)}
+              disabled={!file || busy || (extractionReady && !positionId)}
               onClick={onSave}
             >
-              {busy ? 'Đang xử lý CV...' : '✓ Lưu CV ứng viên'}
+              {busy
+                ? 'Đang xử lý CV...'
+                : cv && !extractionReady
+                  ? 'Thử đọc lại CV'
+                  : '✓ Lưu CV ứng viên'}
             </button>
           </div>
         </section>

@@ -7,6 +7,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isEmail } from 'class-validator';
 import { AiService } from '../ai/ai.service.js';
 import { ExtractedCvSchema } from '../ai/schemas/extracted-cv.schema.js';
 import { Applicant } from '../applicants/entities/applicant.entity.js';
@@ -191,6 +192,17 @@ export class CvsService {
     }
 
     const extracted = ExtractedCvSchema.parse(cv.extractedData);
+    const name = extracted.name?.trim();
+    const email = extracted.email?.trim();
+    if (!name) {
+      throw new BadRequestException('Vui lòng nhập họ và tên ứng viên');
+    }
+    if (!email || !isEmail(email)) {
+      throw new BadRequestException('Vui lòng nhập email hợp lệ');
+    }
+    extracted.name = name;
+    extracted.email = email.toLowerCase();
+
     const position = await this.cvPositionService.findForApproval(
       positionId,
       extracted.position,

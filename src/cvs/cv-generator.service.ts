@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import JSZip from 'jszip';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -102,6 +102,8 @@ export class CvGeneratorService {
     await writeFile(docxPath, await zip.generateAsync({ type: 'nodebuffer' }));
 
     let pdfAvailable = false;
+    const pdfPath = join(destination, 'cv.pdf');
+    await rm(pdfPath, { force: true });
     try {
       const converter = process.env.DOCX_TO_PDF_BIN || 'soffice';
       await execFileAsync(converter, [
@@ -112,7 +114,7 @@ export class CvGeneratorService {
         destination,
         docxPath,
       ]);
-      await stat(join(destination, 'cv.pdf'));
+      await stat(pdfPath);
       pdfAvailable = true;
     } catch (error) {
       this.logger.warn(
