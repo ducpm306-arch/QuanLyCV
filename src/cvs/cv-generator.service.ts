@@ -6,6 +6,9 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Cv } from './entities/cv.entity.js';
+import { extractCandidatePhoto } from './cv-photo-extractor.js';
+import { AiService } from '../ai/ai.service.js';
+import { renderCvPdf } from './cv-pdf.js';
 
 const execFileAsync = promisify(execFile);
 const templatePath = join(
@@ -16,10 +19,16 @@ const templatePath = join(
 const outputRoot = join(process.cwd(), 'uploads', 'cvs', 'generated');
 const wordNamespace =
   'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const packageRelationshipNamespace =
+  'http://schemas.openxmlformats.org/package/2006/relationships';
+const contentTypeNamespace =
+  'http://schemas.openxmlformats.org/package/2006/content-types';
 
 @Injectable()
 export class CvGeneratorService {
   private readonly logger = new Logger(CvGeneratorService.name);
+
+  constructor(private readonly aiService?: AiService) {}
 
   async generate(cv: Cv, cvId: string) {
     if (!cv.extractedData) {
@@ -33,18 +42,7 @@ export class CvGeneratorService {
     await mkdir(destination, { recursive: true });
 
     const docxPath = join(destination, 'cv.docx');
-    const extracted = cv.extractedData;
-    const review = cv.review;
-
-    const values: Record<string, string> = {
-      'Tên:': this.value(extracted.name),
-      'Vị trí ứng tuyển:': this.value(extracted.position),
-      'Tech Stacks:': this.value(extracted.tech_stacks),
-      'Kinh nghiệm:': this.value(extracted.experience_years ?? 0, ' năm'),
-      'Email:': this.value(extracted.email),
-      'SĐT:': this.value(extracted.phone_number),
-      'Nhận xét:': this.value(extracted.review || review.summary),
-    };
+    const values = this.values(cv);
 
     let source: Buffer;
     try {
@@ -95,6 +93,23 @@ export class CvGeneratorService {
       }
     }
 
+    let photo: Buffer | null = null;
+    if (cv.file) {
+      try {
+        const originalPath = join(process.cwd(), 'uploads', 'cvs', cv.file);
+        photo = await extractCandidatePhoto(
+          originalPath,
+          cv.mimeType,
+          this.aiService?.locateCandidatePhoto.bind(this.aiService),
+        );
+        if (photo) await this.addPhoto(zip, document, photo);
+      } catch (error) {
+        this.logger.warn(
+          `Could not copy candidate photo: ${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
+    }
+
     zip.file(
       'word/document.xml',
       new XMLSerializer().serializeToString(document),
@@ -118,8 +133,10 @@ export class CvGeneratorService {
       pdfAvailable = true;
     } catch (error) {
       this.logger.warn(
-        `DOCX was created, but PDF conversion failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `LibreOffice PDF conversion failed; using built-in PDF renderer: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
+      await writeFile(pdfPath, await renderCvPdf(values, photo));
+      pdfAvailable = true;
     }
     return {
       docx: join('uploads', 'cvs', 'generated', cvId, 'cv.docx'),
@@ -131,6 +148,107 @@ export class CvGeneratorService {
 
   generatedPath(cvId: string, format: 'docx' | 'pdf') {
     return join(outputRoot, cvId, `cv.${format}`);
+  }
+
+  async ensurePdf(cv: Cv, cvId: string) {
+    if (!cv.extractedData || !cv.review) {
+      throw new NotFoundException('CV chưa có dữ liệu để tạo PDF');
+    }
+    const docxPath = this.generatedPath(cvId, 'docx');
+    await stat(docxPath);
+    let photo: Buffer | null = null;
+    try {
+      photo = await extractCandidatePhoto(
+        docxPath,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not read candidate photo for PDF: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+    await writeFile(
+      this.generatedPath(cvId, 'pdf'),
+      await renderCvPdf(this.values(cv), photo),
+    );
+    return join('uploads', 'cvs', 'generated', cvId, 'cv.pdf');
+  }
+
+  private values(cv: Cv): Record<string, string> {
+    const extracted = cv.extractedData!;
+    const review = cv.review!;
+    return {
+      'Tên:': this.value(extracted.name),
+      'Vị trí ứng tuyển:': this.value(extracted.position),
+      'Tech Stacks:': this.value(extracted.tech_stacks),
+      'Kinh nghiệm:': this.value(extracted.experience_years ?? 0, ' năm'),
+      'Email:': this.value(extracted.email),
+      'SĐT:': this.value(extracted.phone_number),
+      'Nhận xét:': this.value(extracted.review || review.summary),
+    };
+  }
+
+  private async addPhoto(zip: JSZip, document: Document, photo: Buffer) {
+    const firstCell = document.getElementsByTagNameNS(wordNamespace, 'tc').item(0);
+    const paragraph = firstCell?.getElementsByTagNameNS(wordNamespace, 'p').item(0);
+    const relationshipsFile = zip.file('word/_rels/document.xml.rels');
+    const contentTypesFile = zip.file('[Content_Types].xml');
+    if (!paragraph || !relationshipsFile || !contentTypesFile) return;
+
+    const relationships = new DOMParser().parseFromString(
+      await relationshipsFile.async('string'), 'application/xml',
+    );
+    const existingIds = Array.from(
+      relationships.getElementsByTagNameNS(packageRelationshipNamespace, 'Relationship'),
+    ).map((item) => item.getAttribute('Id'));
+    let relationshipNumber = 1;
+    while (existingIds.includes(`rId${relationshipNumber}`)) relationshipNumber += 1;
+    const relationshipId = `rId${relationshipNumber}`;
+    const relation = relationships.createElementNS(
+      packageRelationshipNamespace, 'Relationship',
+    );
+    relation.setAttribute('Id', relationshipId);
+    relation.setAttribute('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image');
+    relation.setAttribute('Target', 'media/candidate-photo.png');
+    relationships.documentElement.appendChild(relation);
+
+    const contentTypes = new DOMParser().parseFromString(
+      await contentTypesFile.async('string'), 'application/xml',
+    );
+    const hasPngType = Array.from(
+      contentTypes.getElementsByTagNameNS(contentTypeNamespace, 'Default'),
+    ).some((item) => item.getAttribute('Extension') === 'png');
+    if (!hasPngType) {
+      const type = contentTypes.createElementNS(contentTypeNamespace, 'Default');
+      type.setAttribute('Extension', 'png');
+      type.setAttribute('ContentType', 'image/png');
+      contentTypes.documentElement.appendChild(type);
+    }
+
+    const drawing = new DOMParser().parseFromString(`
+      <w:r xmlns:w="${wordNamespace}"
+           xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+           xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+           xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">
+          <wp:extent cx="1097280" cy="1316736"/>
+          <wp:docPr id="1" name="Candidate photo"/>
+          <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+            <pic:pic>
+              <pic:nvPicPr><pic:cNvPr id="1" name="Candidate photo"/><pic:cNvPicPr/></pic:nvPicPr>
+              <pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+              <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1097280" cy="1316736"/></a:xfrm>
+                <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+            </pic:pic>
+          </a:graphicData></a:graphic>
+        </wp:inline></w:drawing>
+      </w:r>`, 'application/xml');
+    paragraph.appendChild(document.importNode(drawing.documentElement, true));
+
+    zip.file('word/media/candidate-photo.png', photo);
+    zip.file('word/_rels/document.xml.rels', new XMLSerializer().serializeToString(relationships));
+    zip.file('[Content_Types].xml', new XMLSerializer().serializeToString(contentTypes));
   }
 
   private value(value: unknown, suffix = ''): string {

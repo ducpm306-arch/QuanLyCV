@@ -22,6 +22,7 @@ function createService(name: string | null, email: string | null) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     { findForApproval: vi.fn() } as never,
     {} as never,
   );
@@ -40,5 +41,42 @@ describe('CvsService.approve', () => {
       service.approve('507f1f77bcf86cd799439011'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(applicantModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('CvsService.remove', () => {
+  it('soft deletes the CV, applicant, and linked tech stacks', async () => {
+    const cv = {
+      _id: '507f1f77bcf86cd799439011',
+      deletedAt: null as Date | null,
+      save: vi.fn(),
+    };
+    const applicant = {
+      _id: '507f1f77bcf86cd799439012',
+      deletedAt: null as Date | null,
+      save: vi.fn(),
+    };
+    const applicantModel = { findOne: vi.fn().mockResolvedValue(applicant) };
+    const applicantTechStackModel = { updateMany: vi.fn() };
+    const service = new CvsService(
+      { findOne: vi.fn().mockResolvedValue(cv) } as never,
+      applicantModel as never,
+      applicantTechStackModel as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.remove(cv._id);
+
+    expect(cv.deletedAt).toBeInstanceOf(Date);
+    expect(applicant.deletedAt).toEqual(cv.deletedAt);
+    expect(applicantTechStackModel.updateMany).toHaveBeenCalledWith(
+      { applicant: applicant._id, deletedAt: null },
+      { $set: { deletedAt: cv.deletedAt } },
+    );
+    expect(cv.save).toHaveBeenCalledOnce();
   });
 });

@@ -30,9 +30,9 @@ import { CvTechStackService } from './cv-tech-stack.service.js';
     MongooseModule.forFeature([
       { name: Cv.name, schema: CvSchema },
       { name: Applicant.name, schema: ApplicantSchema },
+      { name: ApplicantTechStack.name, schema: ApplicantTechStackSchema },
       { name: Position.name, schema: PositionSchema },
       { name: TechStack.name, schema: TechStackSchema },
-      { name: ApplicantTechStack.name, schema: ApplicantTechStackSchema },
     ]),
     AiModule,
   ],

@@ -12,7 +12,7 @@ Cài các phần mềm sau trước khi chạy dự án:
 - Node.js 20 trở lên và npm.
 - MongoDB local, MongoDB Atlas hoặc Docker Desktop.
 - Một API hỗ trợ giao thức OpenAI cho chức năng trích xuất và đánh giá CV.
-- LibreOffice nếu cần chuyển file DOCX đã tạo sang PDF.
+- LibreOffice nếu muốn chuyển DOCX sang PDF bằng công cụ ngoài; ứng dụng cũng có bộ tạo PDF dự phòng.
 - Apache Tika nếu cần đọc file DOC cũ hoặc muốn tăng khả năng OCR.
 
 Kiểm tra Node.js và npm trong Windows CMD:
@@ -169,7 +169,13 @@ Cài LibreOffice và đặt đường dẫn sau trong `.env`:
 DOCX_TO_PDF_BIN=C:\Program Files\LibreOffice\program\soffice.exe
 ```
 
-Nếu không có LibreOffice, hệ thống vẫn tạo DOCX nhưng trường PDF sẽ không có.
+Nếu không có LibreOffice, hệ thống vẫn tạo DOCX và dùng bộ tạo PDF dự phòng.
+Khi PDF được tạo thành công, có thể tải PDF hoặc DOCX từ danh sách CV và cửa sổ xem trước.
+
+Ảnh ứng viên trong CV xuất ra được lấy từ ảnh chân dung nhúng trong PDF/DOCX gốc.
+Với PDF scan, hệ thống dùng AI để xác định vùng ảnh trên trang đầu rồi cắt ảnh.
+File DOC cũ cần LibreOffice để chuyển tạm sang DOCX trước khi lấy ảnh.
+Nếu CV gốc không có ảnh chân dung nhận diện được, CV xuất ra sẽ để trống ô ảnh.
 
 Template mặc định nằm tại:
 

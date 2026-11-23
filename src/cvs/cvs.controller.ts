@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -41,6 +42,11 @@ export class CvsController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.cvsService.findOne(id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.cvsService.remove(id);
   }
 
   @Post(':id/extract')

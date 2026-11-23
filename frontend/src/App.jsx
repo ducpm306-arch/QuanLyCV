@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const emptyExtracted = {
   name: '',
@@ -54,6 +58,8 @@ function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [previewCv, setPreviewCv] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const previewRequest = useRef(null);
   const fileInput = useRef(null);
 
   useEffect(() => {
@@ -302,25 +308,57 @@ function App() {
   }
 
   async function openGenerated(cvItem) {
+    previewRequest.current?.abort();
+    const request = new AbortController();
+    previewRequest.current = request;
     setPreviewCv({ ...cvItem, loading: true, error: '' });
-    if (cvItem.generatedFiles?.pdf) {
-      setPreviewCv({
-        ...cvItem,
-        loading: false,
-        pdfUrl: `/cvs/${cvItem._id}/preview`,
-      });
-      return;
-    }
     try {
-      const response = await fetch(`/cvs/${cvItem._id}/preview`);
-      if (!response.ok) throw new Error('Chưa có file PDF để xem trước.');
+      const response = await fetch(`/cvs/${cvItem._id}/preview`, {
+        signal: request.signal,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || 'Chưa có file PDF để xem trước.');
+      }
+      if (!response.headers.get('content-type')?.includes('application/pdf')) {
+        throw new Error('Máy chủ không trả về file PDF hợp lệ.');
+      }
+      const pdfData = new Uint8Array(await response.arrayBuffer());
       setPreviewCv({
         ...cvItem,
         loading: false,
-        pdfUrl: `/cvs/${cvItem._id}/preview`,
+        pdfData,
+        generatedFiles: {
+          ...cvItem.generatedFiles,
+          pdf: cvItem.generatedFiles?.pdf || `uploads/cvs/generated/${cvItem._id}/cv.pdf`,
+        },
       });
+      void loadCvs();
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setPreviewCv({ ...cvItem, loading: false, error: err.message });
+    }
+  }
+
+  function closePreview() {
+    previewRequest.current?.abort();
+    setPreviewCv(null);
+  }
+
+  async function deleteCv(item) {
+    setDeletingId(item._id);
+    setError('');
+    try {
+      await readJson(await fetch(`/cvs/${item._id}`, { method: 'DELETE' }));
+      if (previewCv?._id === item._id) closePreview();
+      await loadCvs();
+      setNotice('Đã xoá CV.');
+      return true;
+    } catch (err) {
+      setError(err.message || 'Không thể xoá CV.');
+      return false;
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -394,13 +432,19 @@ function App() {
               onSave={saveCandidate}
             />
           ) : (
-            <ListPage cvs={cvs} onRefresh={loadCvs} onPreview={openGenerated} />
+            <ListPage
+              cvs={cvs}
+              onRefresh={loadCvs}
+              onPreview={openGenerated}
+              onDelete={deleteCv}
+              deletingId={deletingId}
+            />
           )}
         </div>
       </main>
 
       {previewCv && (
-        <PreviewModal item={previewCv} onClose={() => setPreviewCv(null)} />
+        <PreviewModal item={previewCv} onClose={closePreview} />
       )}
     </div>
   );
@@ -653,7 +697,8 @@ function normalizeTechStack(value) {
     .replace(/\s+/g, '');
 }
 
-function ListPage({ cvs, onRefresh, onPreview }) {
+function ListPage({ cvs, onRefresh, onPreview, onDelete, deletingId }) {
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
   return (
     <>
       <div className="page-heading list-heading">
@@ -673,6 +718,7 @@ function ListPage({ cvs, onRefresh, onPreview }) {
               <th>Ngày tải lên</th>
               <th>Trạng thái</th>
               <th className="text-end">Tệp tạo theo mẫu</th>
+              <th className="text-end">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -692,31 +738,54 @@ function ListPage({ cvs, onRefresh, onPreview }) {
                   {item.generatedFiles?.pdf ||
                   item.generatedFiles?.docx ||
                   item.status === 'generated' ? (
-                    <div className="d-inline-flex gap-2">
+                    <div className="cv-actions">
                       <button
                         className="btn btn-outline-dark btn-sm"
                         onClick={() => onPreview(item)}
                       >
                         Xem CV tạo
                       </button>
-                      {item.generatedFiles?.docx && (
-                        <a
-                          className="btn btn-dark btn-sm"
-                          href={`/cvs/${item._id}/download/docx`}
-                        >
-                          Tải DOCX
-                        </a>
-                      )}
+                      <DownloadMenu item={item} />
                     </div>
                   ) : (
                     <span className="text-muted small">Chưa tạo</span>
+                  )}
+                </td>
+                <td className="text-end">
+                  {pendingDeleteId === item._id ? (
+                    <div className="delete-confirmation">
+                      <span>Xoá CV này?</span>
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        disabled={deletingId === item._id}
+                        onClick={() => setPendingDeleteId(null)}
+                      >
+                        Huỷ
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        disabled={deletingId === item._id}
+                        onClick={async () => {
+                          if (await onDelete(item)) setPendingDeleteId(null);
+                        }}
+                      >
+                        {deletingId === item._id ? 'Đang xoá...' : 'Xác nhận'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setPendingDeleteId(item._id)}
+                    >
+                      Xoá
+                    </button>
                   )}
                 </td>
               </tr>
             ))}
             {cvs.length === 0 && (
               <tr>
-                <td colSpan="4" className="empty-table">
+                <td colSpan="5" className="empty-table">
                   Chưa có CV nào được tải lên.
                 </td>
               </tr>
@@ -753,7 +822,7 @@ function PreviewModal({ item, onClose }) {
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
-        className={`preview-modal ${item.loading || item.pdfUrl ? '' : 'no-preview'}`}
+        className={`preview-modal ${item.loading || item.pdfData ? '' : 'no-preview'}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="preview-title"
@@ -769,30 +838,134 @@ function PreviewModal({ item, onClose }) {
         </div>
         {item.loading ? (
           <div className="empty-state">Đang mở bản xem trước...</div>
-        ) : item.pdfUrl ? (
-          <iframe
-            className="generated-preview"
-            src={item.pdfUrl}
-            title="CV đã tạo"
-          />
+        ) : item.pdfData ? (
+          <PdfPreview data={item.pdfData} />
         ) : (
           <div className="empty-state">
             {item.error ||
               'Chưa có bản PDF xem trước. Bạn có thể tải DOCX để mở bằng Word.'}
           </div>
         )}
-        {item.generatedFiles?.docx && (
+        {(item.generatedFiles?.docx || item.generatedFiles?.pdf) && (
           <div className="preview-modal-footer">
-            <a
-              className="btn btn-dark btn-sm"
-              href={`/cvs/${item._id}/download/docx`}
-            >
-              Tải DOCX
-            </a>
+            <DownloadMenu item={item} opensUp />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function DownloadMenu({ item, opensUp = false }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector('a')?.focus();
+    const closeOutside = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className={`download-menu ${opensUp ? 'download-menu-up' : ''}`} ref={rootRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="btn btn-dark btn-sm download-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        Tải CV <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="download-options" role="menu" ref={menuRef}>
+          {item.generatedFiles?.docx && (
+            <a role="menuitem" href={`/cvs/${item._id}/download/docx`} onClick={() => setOpen(false)}>
+              Tải DOCX
+            </a>
+          )}
+          {(item.generatedFiles?.pdf || item.status === 'generated') && (
+            <a role="menuitem" href={`/cvs/${item._id}/download/pdf`} onClick={() => setOpen(false)}>
+              Tải PDF
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PdfPreview({ data }) {
+  const containerRef = useRef(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    let documentTask;
+    let pdf;
+    let renderTask;
+    const container = containerRef.current;
+
+    async function renderPages() {
+      try {
+        documentTask = getDocument({ data });
+        pdf = await documentTask.promise;
+        if (cancelled) return;
+        container.replaceChildren();
+        for (let number = 1; number <= pdf.numPages; number += 1) {
+          const page = await pdf.getPage(number);
+          if (cancelled) return;
+          const baseViewport = page.getViewport({ scale: 1 });
+          const width = Math.max(280, container.clientWidth - 28);
+          const viewport = page.getViewport({ scale: width / baseViewport.width });
+          const canvas = document.createElement('canvas');
+          canvas.className = 'pdf-page';
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          container.appendChild(canvas);
+          renderTask = page.render({
+            canvasContext: canvas.getContext('2d'),
+            viewport,
+            canvas,
+          });
+          await renderTask.promise;
+          renderTask = null;
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Không thể hiển thị PDF.');
+      }
+    }
+
+    void renderPages();
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+      void pdf?.destroy();
+      void documentTask?.destroy();
+    };
+  }, [data]);
+
+  return error ? (
+    <div className="empty-state">{error}</div>
+  ) : (
+    <div className="generated-preview" ref={containerRef} aria-label="Xem trước PDF" />
   );
 }
 

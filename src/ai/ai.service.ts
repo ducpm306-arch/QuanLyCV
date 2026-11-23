@@ -145,4 +145,42 @@ export class AiService {
       throw new BadGatewayException('AI trả về OCR không đúng cấu trúc');
     }
   }
+
+  async locateCandidatePhoto(image: Buffer) {
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: 'Find the applicant portrait photo on this CV page. Return only JSON with x, y, width, height as numbers between 0 and 1 relative to the page. If no clear applicant portrait exists, return {"x":0,"y":0,"width":0,"height":0}. Do not select logos, icons, or the entire page.',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Locate the applicant portrait.' },
+            {
+              type: 'image_url',
+              image_url: { url: `data:image/png;base64,${image.toString('base64')}` },
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const box = JSON.parse(response.choices[0]?.message.content || '') as Record<string, unknown>;
+      const { x, y, width, height } = box;
+      if (
+        [x, y, width, height].every((value) => typeof value === 'number' && Number.isFinite(value)) &&
+        (x as number) >= 0 && (y as number) >= 0 &&
+        (width as number) >= 0.06 && (height as number) >= 0.06 &&
+        (x as number) + (width as number) <= 1 &&
+        (y as number) + (height as number) <= 1 &&
+        (width as number) <= 0.45 && (height as number) <= 0.5
+      ) return box as { x: number; y: number; width: number; height: number };
+    } catch {
+      // A missing or malformed box means the page has no usable portrait.
+    }
+    return null;
+  }
 }

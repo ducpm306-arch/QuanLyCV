@@ -11,6 +11,7 @@ import { isEmail } from 'class-validator';
 import { AiService } from '../ai/ai.service.js';
 import { ExtractedCvSchema } from '../ai/schemas/extracted-cv.schema.js';
 import { Applicant } from '../applicants/entities/applicant.entity.js';
+import { ApplicantTechStack } from '../applicant-tech-stacks/entities/applicant-tech-stack.entity.js';
 import { CvGeneratorService } from './cv-generator.service.js';
 import {
   decodeUploadFileName,
@@ -31,6 +32,8 @@ export class CvsService {
     private readonly cvModel: Model<Cv>,
     @InjectModel(Applicant.name)
     private readonly applicantModel: Model<Applicant>,
+    @InjectModel(ApplicantTechStack.name)
+    private readonly applicantTechStackModel: Model<ApplicantTechStack>,
     private readonly textExtractor: CvTextExtractorService,
     private readonly aiService: AiService,
     private readonly cvGenerator: CvGeneratorService,
@@ -64,6 +67,26 @@ export class CvsService {
       throw new NotFoundException('Không tìm thấy CV');
     }
     return cv;
+  }
+
+  async remove(id: string) {
+    const cv = await this.findOne(id);
+    const deletedAt = new Date();
+    const applicant = await this.applicantModel.findOne({
+      cv: cv._id,
+      deletedAt: null,
+    });
+    if (applicant) {
+      applicant.deletedAt = deletedAt;
+      await applicant.save();
+      await this.applicantTechStackModel.updateMany(
+        { applicant: applicant._id, deletedAt: null },
+        { $set: { deletedAt } },
+      );
+    }
+    cv.deletedAt = deletedAt;
+    await cv.save();
+    return { message: 'Đã xoá CV' };
   }
 
   async extract(id: string) {
@@ -289,7 +312,20 @@ export class CvsService {
     try {
       await access(path);
     } catch {
-      throw new NotFoundException('Chưa có file được generate');
+      if (format !== 'pdf' || cv.status !== 'generated') {
+        throw new NotFoundException('Chưa có file được generate');
+      }
+      try {
+        await access(this.cvGenerator.generatedPath(id, 'docx'));
+      } catch {
+        throw new NotFoundException('Chưa có file được generate');
+      }
+      const pdf = await this.cvGenerator.ensurePdf(cv, id);
+      cv.generatedFiles = {
+        docx: cv.generatedFiles?.docx || join('uploads', 'cvs', 'generated', id, 'cv.docx'),
+        pdf,
+      };
+      await cv.save();
     }
 
     return { path, originalName: cv.originalName };
